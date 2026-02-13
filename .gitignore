@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# IDE
+.idea/
+
+# Planning and Claude (internal tooling)
+.planning/
+.claude/
+
+# Markdown files (docs ficam no repo apenas se necessario)
+*.md
+!README.md
