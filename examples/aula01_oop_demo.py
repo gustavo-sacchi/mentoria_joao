@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.models import Chapter, Project, ProjectStatus, User
+from examples.aula01_models_puro import Chapter, Project, ProjectStatus, User
 
 # ==================================================
 # Secao 1: Criando objetos (instancias)
