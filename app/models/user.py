@@ -1,54 +1,97 @@
 """
-Modelo de dominio: User (Usuario)
+Modelo SQLAlchemy: User (Usuario)
 
-Classe Python pura usando dataclass para representar um usuario do sistema.
-Nesta fase nao usamos banco de dados - apenas OOP puro.
+ANTES (Aula 01): Usavamos @dataclass para definir a estrutura do User.
+AGORA (Aula 02): Usamos SQLAlchemy para mapear a classe para uma tabela no banco.
+
+A classe continua sendo Python puro, mas agora o SQLAlchemy sabe como
+transformar cada atributo em uma coluna do banco de dados.
 
 Conceitos ensinados:
-- dataclass com slots=True
-- Type hints modernos (int | None)
-- Metodo __post_init__ para validacao
-- Metodo __repr__ customizado
-- Property (metodo que parece atributo)
+- Base: classe mae que conecta o modelo ao banco
+- __tablename__: nome da tabela no banco de dados
+- Mapped[tipo]: declara o tipo da coluna (SQLAlchemy 2.0)
+- mapped_column(): configura a coluna (primary_key, unique, etc.)
+- relationship(): define relacao entre tabelas (User -> Projects)
+- server_default: valor padrao gerado pelo BANCO (nao pelo Python)
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+# TYPE_CHECKING: este bloco so roda durante checagem de tipos (mypy/pyright),
+# NAO roda em tempo de execucao. Isso evita importacoes circulares!
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 
-@dataclass(slots=True)
-class User:
-    """Representa um usuario do sistema de ebooks.
+class User(Base):
+    """Modelo de usuario mapeado para a tabela 'users' no banco.
 
-    Atributos:
-        id: Identificador unico (None quando ainda nao foi salvo no banco)
-        email: Email do usuario (deve conter @)
-        name: Nome completo do usuario
-        hashed_password: Senha ja criptografada (nunca armazene senha em texto!)
-        created_at: Data/hora de criacao da conta
-        is_active: Se o usuario esta ativo no sistema
+    Comparacao com a versao dataclass:
+    - ANTES: @dataclass definia a estrutura, mas nao sabia nada do banco
+    - AGORA: User(Base) herda de Base, e o SQLAlchemy cria a tabela automaticamente
+
+    Cada atributo 'Mapped[tipo]' vira uma coluna no banco:
+    - Mapped[int] -> INTEGER
+    - Mapped[str] -> VARCHAR
+    - Mapped[bool] -> BOOLEAN
+    - Mapped[datetime] -> TIMESTAMP
+
+    Relacionamentos:
+    - Um User pode ter varios Projects (relacao 1:N)
     """
 
-    id: int | None
-    email: str
-    name: str
-    hashed_password: str
-    created_at: datetime
-    is_active: bool = True
+    __tablename__ = "users"
 
-    def __post_init__(self) -> None:
-        """Validacao que roda automaticamente apos o __init__.
+    # --- Colunas ---
+    # primary_key=True: esta coluna e o identificador unico (auto-incrementa)
+    id: Mapped[int] = mapped_column(primary_key=True)
 
-        Garante que o email nao esta vazio.
-        Este metodo e chamado pelo Python toda vez que criamos um User().
-        """
-        if not self.email:
-            raise ValueError("Email nao pode ser vazio")
+    # unique=True: nao pode ter dois usuarios com o mesmo email
+    # index=True: cria um indice para buscas rapidas por email
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
 
-        if not self.name:
-            raise ValueError("Nome nao pode ser vazio")
+    name: Mapped[str] = mapped_column(String(100))
+
+    # A senha NUNCA e armazenada em texto puro - sempre o hash
+    hashed_password: Mapped[str] = mapped_column(String(255))
+
+    # default=True: o Python define o valor padrao ao criar o objeto
+    is_active: Mapped[bool] = mapped_column(default=True)
+
+    # server_default=func.now(): o BANCO define a data/hora ao inserir o registro.
+    # Isso e melhor que usar Python pois garante consistencia com o fuso horario do banco.
+    # DateTime(timezone=True) = TIMESTAMP WITH TIME ZONE no PostgreSQL
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    # --- Relacionamentos ---
+    # relationship() nao cria coluna no banco - cria um atributo Python
+    # que permite acessar os projetos de um usuario diretamente.
+    #
+    # "Project" (string): referencia ao modelo Project resolvida pelo SQLAlchemy.
+    #   Usar string evita importacao circular (User importa Project que importa User).
+    #
+    # back_populates="owner": cria vinculo bidirecional com Project.owner
+    # cascade="all, delete-orphan": se deletar o usuario, deleta seus projetos
+    #
+    # Exemplo de uso (veremos nas proximas aulas):
+    #   user.projects  -> retorna lista de Project deste usuario
+    projects: Mapped[list[Project]] = relationship(
+        "Project",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         """Representacao do objeto para debug.
@@ -57,15 +100,3 @@ class User:
         Isso evita que a senha apareca em logs ou prints acidentais.
         """
         return f"User(id={self.id}, email='{self.email}', name='{self.name}')"
-
-    @property
-    def is_valid_email(self) -> bool:
-        """Verifica se o email contem @ (validacao simples).
-
-        Isso e uma property - chamamos como se fosse um atributo:
-            user.is_valid_email  (sem parenteses!)
-
-        Na pratica, usaremos Pydantic para validacao mais robusta.
-        Aqui o objetivo e demonstrar o conceito de property.
-        """
-        return "@" in self.email

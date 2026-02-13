@@ -1,60 +1,96 @@
 """
-Modelo de dominio: Chapter (Capitulo de Ebook)
+Modelo SQLAlchemy: Chapter (Capitulo de Ebook)
 
-Classe Python pura que representa um capitulo de ebook.
-Demonstra metodos que recebem parametros e properties calculadas.
+ANTES (Aula 01): @dataclass com metodo update_content() e property word_count.
+AGORA (Aula 02): Modelo SQLAlchemy com ForeignKey apontando para Project.
 
 Conceitos ensinados:
-- Metodos com parametros e valores padrao
-- Property calculada (word_count)
-- Flag booleana para rastrear origem do conteudo (IA vs humano)
-- Composicao (Chapter pertence a um Project via project_id)
+- ForeignKey para segundo nivel de relacao (Chapter -> Project -> User)
+- Metodos e properties preservados no modelo SQLAlchemy
+- Text vs String: quando usar cada tipo de coluna
+- default vs server_default: quem define o valor (Python vs banco)
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+# TYPE_CHECKING evita importacao circular em tempo de execucao
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 
-@dataclass(slots=True)
-class Chapter:
-    """Representa um capitulo dentro de um projeto de ebook.
+class Chapter(Base):
+    """Modelo de capitulo mapeado para a tabela 'chapters' no banco.
 
-    Cada capitulo tem um conteudo de texto, uma ordem no ebook,
-    e uma flag que indica se o texto foi gerado por IA.
+    Relacionamentos:
+    - Pertence a um Project (via project_id -> projects.id)
 
-    Atributos:
-        id: Identificador unico (None quando nao salvo)
-        project_id: ID do projeto ao qual este capitulo pertence
-        title: Titulo do capitulo
-        content: Texto do capitulo (pode estar vazio inicialmente)
-        order: Posicao do capitulo no ebook (0 = primeiro)
-        ai_generated: Se o conteudo foi gerado por IA
-        created_at: Data/hora de criacao
-        updated_at: Data/hora da ultima atualizacao
+    Metodos preservados da versao dataclass:
+    - update_content(): atualiza texto e marca se veio de IA
+    - word_count: property que conta palavras do conteudo
     """
 
-    id: int | None
-    project_id: int
-    title: str
-    created_at: datetime
-    content: str = ""
-    order: int = 0
-    ai_generated: bool = False
-    updated_at: datetime | None = None
+    __tablename__ = "chapters"
+
+    # --- Colunas ---
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    # ForeignKey("projects.id"): referencia a tabela 'projects'
+    # Um capitulo SEMPRE pertence a um projeto
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+
+    title: Mapped[str] = mapped_column(String(200))
+
+    # Text: tipo sem limite de tamanho, ideal para conteudo longo
+    # default="": capitulo comeca sem conteudo
+    content: Mapped[str] = mapped_column(Text, default="")
+
+    # order: posicao do capitulo no ebook (0 = primeiro)
+    order: Mapped[int] = mapped_column(default=0)
+
+    # ai_generated: flag que indica se o conteudo foi gerado por IA
+    ai_generated: Mapped[bool] = mapped_column(default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        onupdate=func.now(),
+        nullable=True,
+    )
+
+    # --- Relacionamentos ---
+    # project: acessa o projeto ao qual este capitulo pertence
+    # back_populates="chapters": vincula com Project.chapters
+    project: Mapped[Project] = relationship(
+        "Project",
+        back_populates="chapters",
+    )
+
+    # --- Metodos de Negocio ---
+    # Preservamos os metodos da versao dataclass.
 
     def update_content(self, new_content: str, from_ai: bool = False) -> None:
         """Atualiza o conteudo do capitulo.
 
-        Este metodo encapsula a logica de atualizacao:
+        Encapsula a logica de atualizacao:
         - Muda o conteudo
         - Registra se veio de IA
         - Atualiza o timestamp
 
         Args:
             new_content: O novo texto do capitulo
-            from_ai: True se o texto foi gerado por IA, False se escrito pelo usuario
+            from_ai: True se o texto foi gerado por IA
         """
         self.content = new_content
         self.ai_generated = from_ai
@@ -72,3 +108,9 @@ class Chapter:
         if not self.content:
             return 0
         return len(self.content.split())
+
+    def __repr__(self) -> str:
+        return (
+            f"Chapter(id={self.id}, title='{self.title}', "
+            f"order={self.order}, words={self.word_count})"
+        )
