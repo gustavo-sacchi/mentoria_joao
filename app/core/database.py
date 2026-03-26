@@ -1,7 +1,8 @@
 """
 Configuracao do banco de dados com SQLAlchemy 2.0.
 
-Este modulo configura a conexao com o PostgreSQL usando SQLAlchemy.
+Este modulo configura a conexao com o banco usando SQLAlchemy.
+Funciona com SQLite (dev) e PostgreSQL (producao) - basta trocar a DATABASE_URL.
 Todos os modelos herdam da classe Base definida aqui.
 
 Conceitos ensinados:
@@ -28,9 +29,18 @@ from app.core.config import settings
 # O engine e a conexao "bruta" com o banco de dados.
 # Ele gerencia um pool de conexoes para reutilizacao.
 # echo=False desativa logs de SQL (mude para True para debugar queries).
+#
+# SQLite precisa de connect_args={"check_same_thread": False} porque
+# por padrao ele so permite acesso da mesma thread que criou a conexao.
+# FastAPI usa threads diferentes para cada request, entao precisamos desabilitar isso.
+connect_args = {}
+if settings.DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+
 engine = create_engine(
     settings.DATABASE_URL,
     echo=False,
+    connect_args=connect_args,
 )
 
 

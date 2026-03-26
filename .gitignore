@@ -6,8 +6,14 @@ dist/
 wheels/
 *.egg-info
 
+# Environment variables (secrets/senhas - NUNCA commitar)
+.env
+
 # Virtual environments
 .venv
+
+# Database files (SQLite para testes)
+*.db
 
 # IDE
 .idea/
