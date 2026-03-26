@@ -44,7 +44,7 @@ import sys
 # - session_factory: cria sessoes do banco (a "conversa" com o banco)
 # - engine e Base: para garantir que as tabelas existem
 # - User: o modelo que vamos manipular
-# - UserRepository: o repositorio com metodos especificos de usuario
+# - UserRepository: o repositorio com todas as operacoes de usuario
 from app.core.database import Base, engine, session_factory
 from app.models.user import User
 from app.repositories import UserRepository
@@ -116,7 +116,7 @@ try:
     print("SECAO 2: Buscando usuarios")
     print("=" * 60)
 
-    # Busca por ID (metodo herdado do BaseRepository)
+    # Busca por ID
     user_by_id = repo.get_by_id(user.id)
     print(f"\nBusca por ID ({user.id}): {user_by_id}")
 
@@ -124,7 +124,7 @@ try:
     user_fantasma = repo.get_by_id(99999)
     print(f"Busca por ID inexistente (99999): {user_fantasma}")
 
-    # Busca por email (metodo especifico do UserRepository)
+    # Busca por email
     user_by_email = repo.get_by_email(email_teste)
     print(f"\nBusca por email ('{email_teste}'): {user_by_email}")
 
@@ -132,7 +132,7 @@ try:
     user_inexistente = repo.get_by_email("nao.existe@email.com")
     print(f"Busca por email inexistente: {user_inexistente}")
 
-    # Listar todos (metodo herdado do BaseRepository)
+    # Listar todos
     todos = repo.get_all()
     print(f"\nTodos os usuarios ({len(todos)} encontrados):")
     for u in todos:
@@ -224,9 +224,11 @@ try:
     print("RESUMO DA AULA 03")
     print("=" * 60)
     print("""
-O Repository Pattern separa o COMO acessar dados do QUE fazer com eles:
+O Repository Pattern separa o COMO acessar dados do QUE fazer com eles.
 
-    BaseRepository (generico):
+O UserRepository contem TODAS as operacoes de banco para usuarios:
+
+    Operacoes CRUD (basicas):
     - get_by_id()   -> busca por ID
     - get_all()     -> lista com paginacao
     - create()      -> insere no banco
@@ -234,11 +236,13 @@ O Repository Pattern separa o COMO acessar dados do QUE fazer com eles:
     - delete()      -> remove do banco
     - count()       -> conta registros
 
-    UserRepository (especializado):
+    Queries especificas de usuario:
     - get_by_email()     -> busca por email
     - get_active_users() -> lista apenas ativos
     - deactivate()       -> desativa (soft delete)
     - email_exists()     -> verifica duplicidade
+
+Tudo em um unico arquivo, explicito e facil de ler!
 
 Proxima aula: ProjectRepository e ChapterRepository com queries
 mais avancadas, filtros combinados e relacionamentos!

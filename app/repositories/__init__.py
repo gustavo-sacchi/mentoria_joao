@@ -1,15 +1,14 @@
 """
 Repositorios do Ebook Creator.
 
-Re-exporta todas as classes de repositorio para facilitar imports:
-    from app.repositories import BaseRepository, UserRepository
+Re-exporta as classes de repositorio para facilitar imports:
+    from app.repositories import UserRepository
 
 O Repository Pattern centraliza o acesso ao banco de dados.
-Cada entidade tem seu repositorio com operacoes especificas,
-e todos herdam do BaseRepository que fornece CRUD generico.
+Cada entidade tem seu repositorio com todas as operacoes de banco
+(CRUD + queries especificas) em um unico lugar.
 """
 
-from app.repositories.base import BaseRepository
 from app.repositories.user_repo import UserRepository
 
-__all__ = ["BaseRepository", "UserRepository"]
+__all__ = ["UserRepository"]

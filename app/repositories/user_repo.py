@@ -1,14 +1,22 @@
 """
 Repositorio de Usuarios (UserRepository)
 
-Este repositorio herda do BaseRepository e adiciona queries especificas
-para a entidade User. Enquanto o BaseRepository tem operacoes genericas
-(get_by_id, create, delete...), o UserRepository sabe fazer buscas
-que so fazem sentido para usuarios (buscar por email, listar ativos...).
+O Repository Pattern e uma camada entre a logica de negocio e o acesso ao banco.
+Em vez de escrever queries SQL diretamente no codigo da aplicacao, centralizamos
+todas as operacoes de banco aqui. Isso traz varias vantagens:
+
+1. SEPARACAO DE RESPONSABILIDADES: a logica de negocio nao precisa saber
+   como os dados sao armazenados (SQL, NoSQL, arquivo, API...).
+
+2. REUTILIZACAO: se precisar buscar um usuario em varios lugares do codigo,
+   basta chamar repo.get_by_email() em vez de repetir a query.
+
+3. TESTABILIDADE: podemos substituir o repositorio real por um fake nos testes,
+   sem mudar a logica de negocio.
 
 Conceitos ensinados:
-- Heranca pratica: UserRepository herda TODOS os metodos do BaseRepository
-- Especializacao: adiciona metodos que so existem para User
+- Session do SQLAlchemy: a "conversa" com o banco de dados
+- CRUD: Create, Read, Update, Delete - as 4 operacoes basicas
 - Filtros SQLAlchemy: como usar .filter() com operadores Python
 - Operator overload: User.email == "x" NAO e comparacao Python,
   e o SQLAlchemy gerando SQL WHERE email = 'x'
@@ -22,18 +30,17 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.repositories.base import BaseRepository
 
 
-class UserRepository(BaseRepository[User]):
-    """Repositorio especializado para operacoes com usuarios.
+class UserRepository:
+    """Repositorio com todas as operacoes de banco para usuarios.
 
-    Herda de BaseRepository[User], o que significa:
-    - ModelType = User (o generico foi "preenchido")
-    - Todos os metodos CRUD do BaseRepository funcionam com User
-    - Podemos adicionar metodos especificos de usuario
+    Esta classe contem TODAS as operacoes que precisamos para manipular
+    usuarios no banco: as operacoes CRUD basicas (criar, ler, atualizar,
+    deletar) e tambem queries especificas de usuario (buscar por email,
+    listar ativos, etc).
 
-    Metodos herdados (do BaseRepository):
+    Metodos CRUD (operacoes basicas):
     - get_by_id(id) -> User | None
     - get_all(skip, limit) -> list[User]
     - create(user) -> User
@@ -41,7 +48,7 @@ class UserRepository(BaseRepository[User]):
     - delete(user) -> None
     - count() -> int
 
-    Metodos proprios (definidos aqui):
+    Metodos especificos de usuario:
     - get_by_email(email) -> User | None
     - get_active_users(skip, limit) -> list[User]
     - deactivate(user) -> User
@@ -54,19 +61,153 @@ class UserRepository(BaseRepository[User]):
     """
 
     def __init__(self, db: Session) -> None:
-        """Inicializa o UserRepository com a sessao do banco.
+        """Inicializa o repositorio com a sessao do banco.
 
-        Diferente do BaseRepository que recebe model e db,
-        aqui ja sabemos que o modelo e User - entao o __init__
-        so precisa receber a sessao.
-
-        O super().__init__(User, db) chama o construtor do pai
-        passando a classe User automaticamente.
+        A sessao (Session) e a "conversa" com o banco de dados.
+        Toda operacao de leitura ou escrita precisa de uma sessao.
 
         Args:
             db: Sessao do SQLAlchemy.
         """
-        super().__init__(User, db)
+        self.db = db
+
+    # =========================================================
+    # CRUD - Operacoes basicas (Create, Read, Update, Delete)
+    # =========================================================
+
+    def get_by_id(self, id: int) -> User | None:
+        """Busca um usuario pelo ID (chave primaria).
+
+        Usa db.get() do SQLAlchemy 2.0 - a forma moderna e recomendada.
+        O antigo db.query(Model).get(id) esta deprecated (nao usar!).
+
+        Args:
+            id: O identificador unico do usuario.
+
+        Returns:
+            O User encontrado ou None se nao existir.
+
+        Exemplo:
+            user = repo.get_by_id(1)
+            if user:
+                print(user.name)
+        """
+        return self.db.get(User, id)
+
+    def get_all(self, skip: int = 0, limit: int = 100) -> list[User]:
+        """Lista usuarios com paginacao (skip/limit).
+
+        NUNCA retorne todos os registros sem limite! Em producao, uma tabela
+        pode ter milhoes de linhas. Sempre use paginacao.
+
+        Args:
+            skip: Quantos registros pular (offset). Default: 0.
+            limit: Maximo de registros a retornar. Default: 100.
+
+        Returns:
+            Lista de usuarios.
+
+        Exemplo:
+            # Primeira pagina (10 primeiros)
+            users = repo.get_all(skip=0, limit=10)
+
+            # Segunda pagina (10 seguintes)
+            users = repo.get_all(skip=10, limit=10)
+        """
+        return self.db.query(User).offset(skip).limit(limit).all()
+
+    def create(self, user: User) -> User:
+        """Cria um novo usuario no banco.
+
+        Fluxo:
+        1. db.add(user): marca o usuario para insercao
+        2. db.commit(): envia o INSERT para o banco
+        3. db.refresh(user): recarrega o objeto com dados do banco
+           (ex: id gerado, created_at preenchido pelo servidor)
+
+        NOTA: Em projetos maiores, o commit seria responsabilidade
+        de uma camada superior (Unit of Work pattern). Aqui simplificamos
+        para fins didaticos - cada operacao faz seu proprio commit.
+
+        Args:
+            user: Instancia do User a ser salva.
+
+        Returns:
+            O mesmo objeto, agora com id e campos preenchidos pelo banco.
+
+        Exemplo:
+            user = User(email="joao@email.com", name="Joao", hashed_password="hash")
+            user = repo.create(user)
+            print(user.id)  # Agora tem um ID!
+        """
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def update(self, user: User) -> User:
+        """Atualiza um usuario existente no banco.
+
+        O SQLAlchemy rastreia mudancas automaticamente (dirty tracking).
+        Basta modificar os atributos do objeto e chamar commit().
+
+        Fluxo:
+        1. Modifique o objeto: user.name = "Novo Nome"
+        2. Chame repo.update(user)
+        3. O SQLAlchemy detecta a mudanca e gera o UPDATE SQL
+
+        Args:
+            user: Instancia do User com atributos modificados.
+
+        Returns:
+            O usuario atualizado com dados frescos do banco.
+
+        Exemplo:
+            user = repo.get_by_id(1)
+            user.name = "Novo Nome"
+            user = repo.update(user)
+        """
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def delete(self, user: User) -> None:
+        """Remove um usuario do banco.
+
+        CUIDADO: Esta operacao e irreversivel apos o commit!
+        Em producao, muitas vezes preferimos "soft delete"
+        (marcar como inativo) em vez de deletar de verdade.
+        Veja o metodo deactivate() para soft delete.
+
+        Args:
+            user: Instancia do User a ser removida.
+
+        Exemplo:
+            user = repo.get_by_id(1)
+            if user:
+                repo.delete(user)
+        """
+        self.db.delete(user)
+        self.db.commit()
+
+    def count(self) -> int:
+        """Conta o total de usuarios no banco.
+
+        Util para paginacao (saber quantas paginas existem)
+        e para dashboards/relatorios.
+
+        Returns:
+            Numero total de usuarios.
+
+        Exemplo:
+            total = repo.count()
+            print(f"Total de usuarios: {total}")
+        """
+        return self.db.query(User).count()
+
+    # =========================================================
+    # Queries especificas de usuario
+    # =========================================================
 
     def get_by_email(self, email: str) -> User | None:
         """Busca um usuario pelo email.
